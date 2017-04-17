@@ -1,0 +1,8 @@
+digraph btree {
+n3:pn1 -> n1
+n1 [shape=record, label="5|10|20|30"];
+n3:pn2 -> n2
+n2 [shape=record, label="40|50"];
+n3 [shape=record, label="<pn1>|40|<pn2>"];
+
+}
