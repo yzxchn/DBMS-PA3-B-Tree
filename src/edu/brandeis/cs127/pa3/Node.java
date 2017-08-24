@@ -152,6 +152,8 @@ public abstract class Node{
 	public boolean full () {
 		return lastindex == degree - 1;
 	}
+	
+	public abstract boolean underfull();
 
 	/** 
 	Checks whether two Node objects are siblings. 
@@ -207,7 +209,6 @@ public abstract class Node{
 		while (i < lastindex && val > keys[i]){
 			i++;
 		}
-
 		return i;
 	}
 
@@ -229,7 +230,7 @@ public abstract class Node{
 		// ADD CODE HERE //
 		///////////////////
 		//TODO need to be checked again
-		while (index+1 <= lastindex && val > keys[index+1]){
+		while (index+1 <= lastindex && val >= keys[index+1]){
 			index++;
 		}
 
@@ -255,6 +256,12 @@ public abstract class Node{
 		}
 
 		lastindex -= i;
+		
+		// reset the cells where the keys and pointers move out of 
+		for (int m = lastindex+1; m < degree; m++){
+			ptrs[m] = null;
+			keys[m] = 0;
+		}
 	}
 
 	/**
@@ -307,7 +314,53 @@ public abstract class Node{
 		///////////////////
 		// ADD CODE HERE //
 		///////////////////
-
+		deleteSimple(i);
+		LeafNode propagateFrom = null;
+		// when the first key in a leaf node has changed, we need to update the corresponding key in the internal node as well
+		if (this instanceof LeafNode && i == 1){
+			propagateFrom = (LeafNode) this;
+		}
+		if (underfull()){
+			if (siblings(next) && combinable(next)){
+				combine();
+			} else if (siblings(prev) && combinable(prev)){
+				prev.combine();
+				if (propagateFrom != null){
+					propagateFrom = (LeafNode) prev;
+				}
+			} else if (siblings(next)){
+				int keyToInsert = redistribute();
+				Reference nextParent = next.getParent();
+				nextParent.getNode().keys[nextParent.getIndex()] = keyToInsert;
+			} else if (siblings(prev)){
+				int keyToInsert = prev.redistribute();
+				parentref.getNode().keys[parentref.getIndex()] = keyToInsert;
+			    if (propagateFrom != null){
+			    	propagateFrom = (LeafNode) prev;
+			    }
+			}
+		}
+		// update the key in the internal node
+		if (propagateFrom != null){
+			updateInternalKey(propagateFrom);
+		}
+	}
+	
+	/**
+	 * When a deletion of the first key in startingNode happens, go up the tree and update the key in an internal node
+	 * that equals to the deleted key.
+	 * @param startingNode
+	 */
+	public void updateInternalKey(LeafNode startingNode){
+		Reference nodeParent = startingNode.getParent();
+		// Find the internal node that needs to be updated
+		while (nodeParent != null && nodeParent.getIndex() == 0){
+			nodeParent = nodeParent.getNode().getParent();
+		}
+		// update the key in this node if it is found
+		if (nodeParent != null){
+			nodeParent.getNode().keys[nodeParent.getIndex()] = startingNode.keys[1];
+		}
 	}
 
 	/**

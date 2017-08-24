@@ -1,5 +1,6 @@
 package edu.brandeis.cs127.pa3;
 
+
 /**
    LeafNodes of B+ trees
  */
@@ -46,6 +47,11 @@ public class LeafNode extends Node {
 
 		return (int) Math.ceil((degree - 1) / 2.0);
 	}
+	
+	public boolean underfull(){
+		return lastindex < minkeys();
+	}
+
 
 	/**
        Check if this node can be combined with other into a new node without splitting.
@@ -54,7 +60,7 @@ public class LeafNode extends Node {
 	 */
 	public boolean combinable (Node other){
 		// ADD CODE HERE
-		return this.getLast() + other.getLast() < degree - 1;
+		return this.getLast() + other.getLast() < degree;
 	}
 
 	/**
@@ -66,6 +72,17 @@ public class LeafNode extends Node {
 		///////////////////
 		// ADD CODE HERE //
 		///////////////////
+		for (int i=1, j=lastindex+1; i<=next.getLast(); i++, j++){
+			keys[j] = next.getKey(i);
+			lastindex++;
+		}
+		Reference nextParent = next.getParent();
+		// delete the ptr to the sibling node being merged into this node
+		nextParent.getNode().delete(nextParent.getIndex());
+		setNext(next.getNext());
+		if (next != null){
+			next.setPrev(this);
+		}
 	}
 
 	/**
@@ -82,8 +99,23 @@ public class LeafNode extends Node {
 		///////////////////
 		// ADD CODE HERE //
 		///////////////////
-
-		return key;
+		int requiredKeys = (int) Math.ceil((lastindex + next.getLast())/2.0);
+		int keysToMove = requiredKeys - lastindex;
+		if (keysToMove > 0){
+			for (int i=1; i<=keysToMove; i++){
+				int k = next.getKey(1);
+				next.delete(1);
+				this.insert(k, null);
+			}
+		} else {
+			for (int i=-1; i>=keysToMove; i--){
+				int k = this.getKey(lastindex);
+				this.delete(lastindex);
+				next.insert(k, null);
+			}
+		}
+		
+		return next.getKey(1);
 	}
 
 	/**
@@ -128,6 +160,16 @@ public class LeafNode extends Node {
 		///////////////////
 		// ADD CODE HERE //
 		///////////////////	
+		// construct a new key array, without inserting the key to be deleted
+		int[] newKeys = new int[degree];
+		for (int j=1, h=1; j<=lastindex;j++){
+			if (j != i){
+				newKeys[h] = keys[j];
+				h++;
+			}
+		}
+		this.keys = newKeys;
+		lastindex--;
 	} 
 
 	/**
@@ -164,77 +206,55 @@ public class LeafNode extends Node {
 		///////////////////
 		// ADD CODE HERE //
 		///////////////////
-		//TODO insertSimple doesn't replace the default 0 value.
 		if (!full()){
 			insertSimple(val, null, findKeyIndex(val));
 		} else {
 			//when splitting is needed
 			// create a new key array
 			int lhs_size = (int) Math.ceil((lastindex + 1)/2.0);
-			int lhs_count = 0;
 			int old_index = 1;
-			int new_index = 1;
-			//whether the new inserted value has been added to either of the split nodes.
-			boolean added_new_val = false;
-			int[] new_keys = new int[degree];
-			// store the old key array
-			int[] old_keys = keys;
-			// use the new array as this node's key array
-			keys = new_keys;
-			int old_lastindex = lastindex;
-			lastindex = 0;
-			while (lhs_count < lhs_size){
-				if (!added_new_val && val < old_keys[old_index]){
-					insertSimple(val, null, new_index);
-					added_new_val = true;
+			boolean addedNewVal = false;
+			// create an array as the keys for the super node
+			int[] superNodeKeys = new int[degree];
+			for (int i=0;i<superNodeKeys.length;i++){
+				if (old_index > lastindex || (!addedNewVal && val < keys[old_index])){
+					superNodeKeys[i] = val;
+					addedNewVal = true;
 				} else {
-					insertSimple(old_keys[old_index], null, new_index);
+					superNodeKeys[i] = keys[old_index];
 					old_index++;
 				}
-				lhs_count++;
-				new_index++;
 			}
-			
-			LeafNode newRightNode = null;
-			// create a new node to the right of current node
-			if (!added_new_val && val < old_keys[old_index]){
-				newRightNode = new LeafNode(degree, val, this.next, this);
-				added_new_val = true;
-			} else {
-				newRightNode = new LeafNode(degree, old_keys[old_index], this.next, this);
-				old_index++;
-			}
-			
-			// reset new_index
-			new_index = 1;
-			while (old_index <= old_lastindex){
-				if (!added_new_val && val < old_keys[old_index]){
-					newRightNode.insertSimple(val, null, new_index);
-					added_new_val = true;
+			//create a new node to the right of this leaf node
+			LeafNode newRightNode = new LeafNode(degree, 0, this.next, this);
+			// split the array of super node keys into two
+			int[] newKeysOnLeft = new int[degree];
+			int[] newKeysOnRight = new int[degree];
+			for (int i=0, li=1, ri=1;i<superNodeKeys.length;i++){
+				if (i < lhs_size){
+					newKeysOnLeft[li] = superNodeKeys[i];
+					lastindex = li;
+					li++;
 				} else {
-					newRightNode.insertSimple(old_keys[old_index], null, new_index);
-					old_index++;
+					newKeysOnRight[ri] = superNodeKeys[i];
+					newRightNode.lastindex = ri;
+					ri++;
 				}
-				new_index++;
 			}
-			// add the new value, or the last key value in the old key array, whichever is lesser, to the new node
-			if (!added_new_val){
-				newRightNode.insertSimple(val, null, new_index);
-				new_index++;
-			}
-			// propagate up the tree
+			this.keys = newKeysOnLeft;
+			newRightNode.keys = newKeysOnRight;
+			// add the pointer to the new right node to the parent node
 			Reference pref = getParent();
-			// if leafnode has no parent, create a new root
+			// if leaf node has no parent, create a new root
 			if (pref == null){
 				Node parent = new InternalNode(degree, this, newRightNode.getKey(1), newRightNode, null, null);
-				this.setParent(new Reference(parent, 0, false));
-				newRightNode.setParent(new Reference(parent, 1, false));
 			} else {
-				parentref.getNode().insert(newRightNode.getKey(1), newRightNode);
+				Node parent = parentref.getNode();
+				parent.insert(newRightNode.getKey(1), newRightNode);
 			}
 		}
 	}
-
+	
 
 	/**
        Print to stdout the content of this node
